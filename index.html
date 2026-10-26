@@ -1,330 +1,332 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quarantine Log & KQL Bulk Parser</title>
+    <title>Sentinel Quarantine Log Parser</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        darker: '#090d16',
-                        darkcard: '#111827',
-                        accent: '#3b82f6',
-                        accenthover: '#2563eb'
-                    }
-                }
-            }
-        }
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .mono-font { font-family: 'JetBrains Mono', monospace; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #0b0f19; }
-        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
-    <!-- Top Navigation Header -->
-    <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-30">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
             <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                    <i class="fa-solid fa-shield-halved text-white text-lg"></i>
+                <div class="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                    </svg>
                 </div>
                 <div>
-                    <h1 class="font-bold text-lg tracking-tight text-white">Quarantine Log Transformer</h1>
-                    <p class="text-xs text-slate-400">Transform Microsoft Sentinel & Defender logs into standardized analysis blocks</p>
+                    <h1 class="text-xl font-bold tracking-tight text-white">Sentinel Quarantine Log Parser</h1>
+                    <p class="text-xs text-slate-400">Convert Microsoft Defender / Sentinel table copy-pastes into structured incident reports</p>
                 </div>
             </div>
             <div class="flex items-center space-x-3">
-                <button onclick="loadSampleData()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center space-x-1.5">
-                    <i class="fa-solid fa-wand-magic-sparkles text-blue-400"></i>
-                    <span>Load Sample Logs</span>
+                <button id="clearBtn" class="px-4 py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition border border-slate-700">
+                    Clear All
                 </button>
-                <button onclick="clearAll()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5">
-                    <i class="fa-solid fa-trash-can"></i>
-                    <span>Clear All</span>
+                <button id="loadSampleBtn" class="px-4 py-2 text-xs font-medium text-indigo-300 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-800/60 rounded-lg transition">
+                    Load Sample Logs
                 </button>
             </div>
         </div>
     </header>
 
-    <!-- Main Workspace -->
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        <!-- Left Panel: Input & Config -->
+        <!-- Input Section -->
         <section class="lg:col-span-5 flex flex-col space-y-4">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col h-[calc(100vh-10rem)] min-h-[500px]">
-                
-                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <div class="flex items-center space-x-2">
-                        <i class="fa-solid fa-clipboard text-blue-400"></i>
-                        <h2 class="font-semibold text-sm text-slate-200">Bulk Log Input (Sentinel / Tabular / Text)</h2>
-                    </div>
-                    <span id="rowCountBadge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">0 entries</span>
-                </div>
-
-                <div class="my-3 text-xs text-slate-400 leading-relaxed">
-                    Paste copied rows from Microsoft Sentinel grid or tab-separated log output. The parser automatically extracts Recipient, Sender, IPs, Times, Subjects, and Detection reasons.
-                </div>
-
-                <!-- Textarea for bulk paste -->
-                <div class="relative flex-1 flex flex-col">
-                    <textarea 
-                        id="rawInput" 
-                        class="w-full flex-1 bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs mono-font text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none placeholder:text-slate-600"
-                        placeholder="Paste tabular rows directly from Sentinel here (e.g., Recipient | SenderAddress | SenderIP | TimeReceived | SubjectLine | QuarantineReason | DetectionTechnology)..."
-                        oninput="parseLogs()"></textarea>
-                </div>
-
-                <!-- Customization Options -->
-                <div class="mt-4 pt-3 border-t border-slate-800 grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Reputation</label>
-                        <input type="text" id="defaultReputation" value="Domain is Safe | IP is Safe" oninput="parseLogs()" 
-                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Observation</label>
-                        <input type="text" id="defaultObservation" value="" placeholder="e.g. Malicious attachment" oninput="parseLogs()" 
-                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500">
-                    </div>
-                </div>
-
-                <!-- Action Button -->
-                <button onclick="parseLogs()" class="mt-4 w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium rounded-xl text-xs transition shadow-lg shadow-blue-600/20 flex items-center justify-center space-x-2">
-                    <i class="fa-solid fa-bolt"></i>
-                    <span>Parse & Transform Logs</span>
-                </button>
+            <div class="flex justify-between items-center">
+                <label for="rawInput" class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
+                    Paste Raw Sentinel / Defender Logs
+                </label>
+                <span id="parsedCountBadge" class="text-xs px-2.5 py-1 bg-slate-800 text-slate-300 rounded-full font-mono border border-slate-700">0 emails detected</span>
             </div>
+            
+            <div class="relative flex-grow flex flex-col">
+                <textarea id="rawInput" rows="18" 
+                    class="w-full flex-grow bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-slate-600 resize-none shadow-inner"
+                    placeholder="Paste your copied rows directly from Microsoft Sentinel here...&#10;&#10;Example:&#10;john@stellarlife.com&#10;teams-meeting@smritycomputer.com&#10;54.240.27.67&#10;10/22/2026, 11:00:17.000 PM&#10;Conference&#10;High confidence phish&#10;{&quot;Phish&quot;:[&quot;Fingerprint matching&quot;]}"></textarea>
+            </div>
+
+            <button id="parseBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                Parse Logs into Template
+            </button>
         </section>
 
-        <!-- Right Panel: Formatted Output -->
+        <!-- Output Section -->
         <section class="lg:col-span-7 flex flex-col space-y-4">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col h-[calc(100vh-10rem)] min-h-[500px]">
-                
-                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <div class="flex items-center space-x-2">
-                        <i class="fa-solid fa-file-lines text-emerald-400"></i>
-                        <h2 class="font-semibold text-sm text-slate-200">Formatted Output</h2>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <span id="outputCountBadge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">0 blocks</span>
-                        <button onclick="copyAllOutput()" class="px-3 py-1 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center space-x-1.5 shadow-sm">
-                            <i class="fa-regular fa-copy"></i>
-                            <span>Copy All</span>
-                        </button>
+            <div class="flex justify-between items-center">
+                <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012-2m-6 9l2 2 4-4"/></svg>
+                    Formatted Output Template
+                </h2>
+                <button id="copyAllBtn" class="px-3 py-1.5 text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition border border-slate-700 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012-2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                    Copy All Results
+                </button>
+            </div>
+
+            <div class="relative flex-grow">
+                <div id="outputContainer" class="w-full h-[520px] overflow-y-auto bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs font-mono text-slate-300 space-y-6 shadow-inner">
+                    <div class="h-full flex flex-col items-center justify-center text-slate-500 text-center">
+                        <svg class="w-12 h-12 mb-3 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <p class="font-medium">No logs parsed yet</p>
+                        <p class="text-[11px] text-slate-600 mt-1">Paste your KQL query results on the left and click Parse Logs.</p>
                     </div>
                 </div>
-
-                <!-- Output Container -->
-                <div id="outputContainer" class="flex-1 mt-3 overflow-y-auto bg-slate-950/80 border border-slate-800 rounded-xl p-4 mono-font text-xs text-slate-300 space-y-6 select-all">
-                    <div class="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 select-none">
-                        <i class="fa-solid fa-terminal text-3xl"></i>
-                        <p class="text-xs">Paste your logs on the left to instantly generate the formatted output blocks.</p>
-                    </div>
-                </div>
-
             </div>
         </section>
 
     </main>
 
-    <!-- Notification Toast -->
-    <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 border border-slate-700 text-slate-100 text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 z-50">
-        <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
-        <span id="toastMessage">Copied to clipboard successfully!</span>
-    </div>
+    <!-- Footer -->
+    <footer class="bg-slate-900 border-t border-slate-800 py-3 text-center text-xs text-slate-500">
+        Microsoft Sentinel Quarantine Log Parser &bull; Custom Incident Response Template Utility
+    </span></footer>
 
+    <!-- Script Logic -->
     <script>
-        // Sample data mimicking Sentinel copy-paste or KQL grid rows
-        const sampleLogs = `Recipient\tSenderAddress\tSenderIP\tTimeReceived [UTC]\tSubjectLine\tQuarantineReason\tDetectionTechnology
-nick.argol@stellarlife.com\tmaxdividends@substack.com\t69.72.32.112\t10/22/2026, 11:57:42.000...\tPersonalized Portfolio Review + Ideas\tOther / Verify in Quarantine\t
-dawn.wynn@stellarlife.com\tteams-meeting@smritycomputer.com\t54.240.27.194\t10/22/2026, 11:43:53.000...\tConference\tHigh confidence phish\t{"Phish":["Fingerprint matching"],"Spam":["Fingerprint matching"]}
-john@stellarlife.com\tinfo@e.wealthenhancement.com\t13.111.56.99\t10/22/2026, 11:38:05.000...\tScammers Are Getting Smarter. Are You Ready?\tOther / Verify in Quarantine\t
-john@stellarlife.com\tjohn@stellarlife.com\t104.223.84.140\t10/22/2026, 10:33:32.000...\tVoicemail message received — Stellar national - 22 October 2026-03:31 PM\tHigh confidence phish\t{"Phish":["URL detonation"],"Spoof intra-org"}`;
+        const sampleLogs = `john@stellarlife.com
+teams-meeting@smritycomputer.com
+54.240.27.67
+10/22/2026, 11:00:17.000 PM
+Conference
+High confidence phish
+{"Phish":["Fingerprint matching"],"Spam":["Fingerprint matching"]}
 
-        function loadSampleData() {
+nick.argol@stellarlife.com
+info@foundationsource.com
+158.247.18.79
+10/22/2026, 2:45:54.000 PM
+Maximize Your Impact: Meet The Tech Built For Giving—Backed By Experts
+Bulk
+{"Spam":["Bulk"]}
+
+nick.argol@stellarlife.com
+fontaine_camille@onlinechicagoconcoursgroup.help
+10/22/2026, 2:44:00.000 PM
+Re: Question for Nick
+Spam
+{"Spam":["Advanced filter"]}`;
+
+        document.getElementById('loadSampleBtn').addEventListener('click', () => {
             document.getElementById('rawInput').value = sampleLogs;
             parseLogs();
-        }
+        });
 
-        function clearAll() {
+        document.getElementById('clearBtn').addEventListener('click', () => {
             document.getElementById('rawInput').value = '';
-            parseLogs();
+            document.getElementById('outputContainer').innerHTML = `
+                <div class="h-full flex flex-col items-center justify-center text-slate-500 text-center">
+                    <svg class="w-12 h-12 mb-3 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    <p class="font-medium">No logs parsed yet</p>
+                    <p class="text-[11px] text-slate-600 mt-1">Paste your KQL query results on the left and click Parse Logs.</p>
+                </div>`;
+            updateBadge(0);
+        });
+
+        document.getElementById('parseBtn').addEventListener('click', parseLogs);
+        document.getElementById('rawInput').addEventListener('input', parseLogs);
+
+        function updateBadge(count) {
+            const badge = document.getElementById('parsedCountBadge');
+            badge.textContent = `${count} email${count === 1 ? '' : 's'} detected`;
         }
 
-        function showToast(message) {
-            const toast = document.getElementById('toast');
-            document.getElementById('toastMessage').textContent = message;
-            toast.classList.remove('translate-y-20', 'opacity-0');
-            setTimeout(() => {
-                toast.classList.add('translate-y-20', 'opacity-0');
-            }, 2500);
+        function cleanIP(ip) {
+            if (!ip || ip.trim() === '' || ip.includes('@') || ip.includes('/')) return 'N/A';
+            return ip.trim().replace(/\./g, '[.]');
         }
 
-        // Clean detection technologies JSON or raw string
-        function formatDetectionTech(rawTech) {
-            if (!rawTech || rawTech.trim() === '') return '';
+        function cleanDomain(email) {
+            if (!email) return 'Safe';
+            return 'Domain is Safe';
+        }
+
+        function parseDetectionTech(rawTech) {
+            if (!rawTech || rawTech.trim() === '') return 'N/A';
             try {
-                // If it's valid JSON like {"Phish":["Fingerprint matching"]}
-                const parsed = JSON.parse(rawTech.trim());
-                let parts = [];
+                let parsed = JSON.parse(rawTech.trim());
+                let techs = [];
                 for (let key in parsed) {
                     if (Array.isArray(parsed[key])) {
-                        parts.push(`${key}: ${parsed[key].join(', ')}`);
-                    } else {
-                        parts.push(`${key}: ${parsed[key]}`);
+                        techs.push(...parsed[key]);
                     }
                 }
-                return parts.join(' | ');
+                return techs.length > 0 ? techs.join(', ') : 'N/A';
             } catch (e) {
-                // Return cleaned string if not JSON
-                return rawTech.replace(/[{}"\[\]]/g, '').trim();
+                // If it's not JSON, return clean text
+                return rawTech.trim();
             }
         }
 
-        // Parse raw text input (supports TSV, CSV, or multi-line logs)
         function parseLogs() {
-            const input = document.getElementById('rawInput').value.trim();
-            const outputContainer = document.getElementById('outputContainer');
-            const rowCountBadge = document.getElementById('rowCountBadge');
-            const outputCountBadge = document.getElementById('outputCountBadge');
+            const rawText = document.getElementById('rawInput').value;
+            const container = document.getElementById('outputContainer');
             
-            const defRep = document.getElementById('defaultReputation').value;
-            const defObs = document.getElementById('defaultObservation').value;
-
-            if (!input) {
-                outputContainer.innerHTML = `
-                    <div class="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 select-none">
-                        <i class="fa-solid fa-terminal text-3xl"></i>
-                        <p class="text-xs">Paste your logs on the left to instantly generate the formatted output blocks.</p>
+            if (!rawText.trim()) {
+                container.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center text-slate-500 text-center">
+                        <svg class="w-12 h-12 mb-3 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <p class="font-medium">No logs parsed yet</p>
+                        <p class="text-[11px] text-slate-600 mt-1">Paste your KQL query results on the left and click Parse Logs.</p>
                     </div>`;
-                rowCountBadge.textContent = '0 entries';
-                outputCountBadge.textContent = '0 blocks';
+                updateBadge(0);
                 return;
             }
 
-            const lines = input.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-            
-            // Check if first line is a header
-            let startIndex = 0;
-            const firstLineLower = lines[0].toLowerCase();
-            if (firstLineLower.includes('recipient') && (firstLineLower.includes('sender') || firstLineLower.includes('subject'))) {
-                startIndex = 1;
-            }
+            // Split into lines and clean up Sentinel UI text
+            let lines = rawText.split('\n')
+                .map(l => l.trim())
+                .filter(l => l !== '' && 
+                             !l.includes('Press ENTER to sort') && 
+                             !l.includes('Press ALT DOWN') &&
+                             !l.startsWith('Selected workspace') &&
+                             !l.startsWith('Time range :') &&
+                             !l.startsWith('Show :') &&
+                             !l.startsWith('Results') &&
+                             !l.startsWith('Chart') &&
+                             !l.startsWith('Query details') &&
+                             !l.match(/^\d+ - \d+ of \d+$/) &&
+                             l !== 'Recipient' && 
+                             l !== 'SenderAddress' && 
+                             l !== 'SenderIp' && 
+                             l !== 'TimeReceived [UTC]' && 
+                             l !== 'SubjectLine' && 
+                             l !== 'QuarantineReason' && 
+                             l !== 'DetectionTechnology');
 
-            let entries = [];
+            let emailBlocks = [];
+            let i = 0;
 
-            for (let i = startIndex; i < lines.length; i++) {
-                const line = lines[i];
-                // Split by tab (standard for Sentinel grid copy-paste) or multiple spaces if tab isn't present
-                let cols = line.split('\t');
-                if (cols.length < 3) {
-                    // Fallback to regex split or multi-space splitting if tab delimiter wasn't used
-                    cols = line.split(/\s{2,}/);
-                }
+            // Robust multi-line block parser
+            while (i < lines.length) {
+                let recipient = '';
+                let sender = '';
+                let senderIp = 'N/A';
+                let timeReceived = '';
+                let subject = '';
+                let quarantineReason = '';
+                let detectionTech = '';
 
-                // If we couldn't split nicely, create a fallback entry using the whole line
-                if (cols.length >= 6) {
-                    entries.push({
-                        recipient: cols[0] || 'N/A',
-                        sender: cols[1] || 'N/A',
-                        senderIp: cols[2] || 'N/A',
-                        timeReceived: cols[3] || 'N/A',
-                        subject: cols[4] || 'N/A',
-                        quarantineReason: cols[5] || 'N/A',
-                        detection: formatDetectionTech(cols[6] || '')
-                    });
-                } else if (cols.length >= 4) {
-                    entries.push({
-                        recipient: cols[0] || 'N/A',
-                        sender: cols[1] || 'N/A',
-                        senderIp: cols[2] || 'N/A',
-                        timeReceived: cols[3] || 'N/A',
-                        subject: cols[4] || 'N/A',
-                        quarantineReason: cols[5] || 'Other / Verify in Quarantine',
-                        detection: formatDetectionTech(cols[6] || '')
-                    });
+                // 1. Recipient (must contain @)
+                if (lines[i] && lines[i].includes('@')) {
+                    recipient = lines[i++];
                 } else {
-                    // Fallback generic parsing if columns are irregular
-                    entries.push({
-                        recipient: 'Parsed Line ' + (i + 1),
-                        sender: 'N/A',
-                        senderIp: 'N/A',
-                        timeReceived: 'N/A',
-                        subject: line,
-                        quarantineReason: 'Verify in Quarantine',
-                        detection: ''
+                    i++;
+                    continue;
+                }
+
+                // 2. Sender Address (must contain @)
+                if (i < lines.length && lines[i].includes('@')) {
+                    sender = lines[i++];
+                }
+
+                // 3. Check if next line is an IP address or timestamp/subject
+                if (i < lines.length) {
+                    let potentialIpOrTime = lines[i];
+                    // Check if IP format or looks like IPv4
+                    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(potentialIpOrTime)) {
+                        senderIp = cleanIP(potentialIpOrTime);
+                        i++;
+                    }
+                }
+
+                // 4. Time Received (matches date pattern like MM/DD/YYYY or similar)
+                if (i < lines.length && (/\d{1,2}\/\d{1,2}\/\d{4}/.test(lines[i]) || /AM|PM/i.test(lines[i]))) {
+                    timeReceived = lines[i++];
+                }
+
+                // 5. Subject Line
+                if (i < lines.length && !lines[i].toLowerCase().includes('phish') && !lines[i].toLowerCase().includes('spam') && !lines[i].toLowerCase().includes('other') && !lines[i].startsWith('{')) {
+                    subject = lines[i++];
+                }
+
+                // 6. Quarantine Reason
+                if (i < lines.length && (lines[i].toLowerCase().includes('phish') || lines[i].toLowerCase().includes('spam') || lines[i].toLowerCase().includes('bulk') || lines[i].toLowerCase().includes('other') || lines[i].toLowerCase().includes('verify'))) {
+                    quarantineReason = lines[i++];
+                }
+
+                // 7. Detection Technology (JSON or string)
+                if (i < lines.length && (lines[i].startsWith('{') || lines[i].startsWith('[') || !lines[i].includes('@'))) {
+                    detectionTech = parseDetectionTech(lines[i++]);
+                } else {
+                    detectionTech = 'N/A';
+                }
+
+                if (recipient && sender) {
+                    emailBlocks.push({
+                        recipient,
+                        sender: sender.replace(/\./g, '[.]'),
+                        timeReceived: timeReceived || 'N/A',
+                        senderIp: senderIp,
+                        subject: subject || 'N/A',
+                        quarantineReason: quarantineReason || 'N/A',
+                        detectionTech: detectionTech
                     });
                 }
             }
 
-            rowCountBadge.textContent = `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`;
-            outputCountBadge.textContent = `${entries.length} ${entries.length === 1 ? 'block' : 'blocks'}`;
+            updateBadge(emailBlocks.length);
 
-            if (entries.length === 0) {
-                outputContainer.innerHTML = `<div class="text-slate-500 text-center py-8">No valid log rows detected. Check input format.</div>`;
+            if (emailBlocks.length === 0) {
+                container.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center text-amber-400 text-center p-4">
+                        <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <p class="font-medium text-sm">Could not parse logs automatically.</p>
+                        <p class="text-xs text-slate-400 mt-1">Please ensure you copied the exact rows from the Sentinel table results.</p>
+                    </div>`;
                 return;
             }
 
             let htmlContent = '';
-            let rawPlainText = '';
+            let fullCombinedText = '';
 
-            entries.forEach((item, index) => {
-                const emailNum = index + 1;
+            emailBlocks.forEach((item, index) => {
                 const blockText = 
-`Email ${emailNum}
+`**Email ${index + 1}**
 Recipient Address: ${item.recipient}
 Sender Address: ${item.sender}
 Time Received: ${item.timeReceived}
 Sender IP: ${item.senderIp}
 Subject Line: ${item.subject}
 Quarantine Reason: ${item.quarantineReason}
-Detection technologies: ${item.detection}
-Reputation: ${defRep}
-Observation: ${defObs}`;
+Detection technologies: ${item.detectionTech}
+Reputation: Domain is Safe | IP is Safe
+Observation: \n`;
 
-                rawPlainText += blockText + '\n\n';
+                fullCombinedText += blockText + '\n';
 
                 htmlContent += `
-                    <div class="relative group bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-1.5 hover:border-slate-700 transition">
-                        <div class="flex items-center justify-between pb-1 border-b border-slate-800/80 mb-2">
-                            <span class="text-blue-400 font-bold text-xs">Email ${emailNum}</span>
-                            <button onclick="copySingleBlock(this)" data-text="${encodeURIComponent(blockText)}" class="opacity-80 group-hover:opacity-100 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] transition flex items-center space-x-1">
-                                <i class="fa-regular fa-copy"></i>
-                                <span>Copy Block</span>
-                            </button>
-                        </div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Recipient Address:</span> ${escapeHtml(item.recipient)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Sender Address:</span> ${escapeHtml(item.sender)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Time Received:</span> ${escapeHtml(item.timeReceived)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Sender IP:</span> ${escapeHtml(item.senderIp)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Subject Line:</span> ${escapeHtml(item.subject)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Quarantine Reason:</span> ${escapeHtml(item.quarantineReason)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Detection technologies:</span> ${escapeHtml(item.detection)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Reputation:</span> ${escapeHtml(defRep)}</div>
-                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Observation:</span> ${escapeHtml(defObs)}</div>
-                    </div>
-                `;
+                    <div class="bg-slate-950 border border-slate-800 rounded-lg p-3.5 relative group hover:border-slate-700 transition">
+                        <button onclick="copySingleBlock(this)" data-text="${encodeURIComponent(blockText)}" class="absolute top-3 right-3 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-sans font-medium rounded border border-slate-700 opacity-80 group-hover:opacity-100 transition flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012-2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                            Copy Email
+                        </button>
+                        <pre class="whitespace-pre-wrap font-mono text-slate-300 text-xs leading-relaxed">${escapeHtml(blockText)}</pre>
+                    </div>`;
             });
 
-            outputContainer.innerHTML = htmlContent;
-            window.lastGeneratedText = rawPlainText.trim();
+            container.innerHTML = htmlContent;
+            window.lastGeneratedText = fullCombinedText;
         }
 
         function escapeHtml(text) {
-            if (!text) return '';
             return text
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
@@ -335,48 +337,28 @@ Observation: ${defObs}`;
 
         function copySingleBlock(btn) {
             const text = decodeURIComponent(btn.getAttribute('data-text'));
-            copyTextToClipboard(text, 'Email block copied to clipboard!');
+            navigator.clipboard.writeText(text).then(() => {
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = `<svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Copied!`;
+                btn.classList.add('border-emerald-600/50', 'text-emerald-300');
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.classList.remove('border-emerald-600/50', 'text-emerald-300');
+                }, 2000);
+            });
         }
 
-        function copyAllOutput() {
-            if (!window.lastGeneratedText) {
-                showToast('No output to copy!');
-                return;
-            }
-            copyTextToClipboard(window.lastGeneratedText, 'All formatted email blocks copied!');
-        }
-
-        function copyTextToClipboard(text, successMessage) {
-            // Fallback for iFrame or restricted clipboard permissions
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";  // Avoid scrolling to bottom
-            textArea.style.top = "0";
-            textArea.style.left = "0";
-            textArea.style.opacity = "0";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    showToast(successMessage);
-                } else {
-                    showToast('Failed to copy');
-                }
-            } catch (err) {
-                showToast('Error copying to clipboard');
-                console.error('Fallback: Oops, unable to copy', err);
-            }
-
-            document.body.removeChild(textArea);
-        }
-
-        // Initial parse on load
-        window.onload = function() {
-            loadSampleData();
-        }
+        document.getElementById('copyAllBtn').addEventListener('click', () => {
+            if (!window.lastGeneratedText) return;
+            navigator.clipboard.writeText(window.lastGeneratedText).then(() => {
+                const btn = document.getElementById('copyAllBtn');
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = `<svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Copied All!`;
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                }, 2000);
+            });
+        });
     </script>
 </body>
 </html>
