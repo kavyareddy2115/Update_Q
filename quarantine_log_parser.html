@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quarantine Log & KQL Bulk Parser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darker: '#090d16',
+                        darkcard: '#111827',
+                        accent: '#3b82f6',
+                        accenthover: '#2563eb'
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .mono-font { font-family: 'JetBrains Mono', monospace; }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0b0f19; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <i class="fa-solid fa-shield-halved text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg tracking-tight text-white">Quarantine Log Transformer</h1>
+                    <p class="text-xs text-slate-400">Transform Microsoft Sentinel & Defender logs into standardized analysis blocks</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button onclick="loadSampleData()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-wand-magic-sparkles text-blue-400"></i>
+                    <span>Load Sample Logs</span>
+                </button>
+                <button onclick="clearAll()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>Clear All</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Panel: Input & Config -->
+        <section class="lg:col-span-5 flex flex-col space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col h-[calc(100vh-10rem)] min-h-[500px]">
+                
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-clipboard text-blue-400"></i>
+                        <h2 class="font-semibold text-sm text-slate-200">Bulk Log Input (Sentinel / Tabular / Text)</h2>
+                    </div>
+                    <span id="rowCountBadge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">0 entries</span>
+                </div>
+
+                <div class="my-3 text-xs text-slate-400 leading-relaxed">
+                    Paste copied rows from Microsoft Sentinel grid or tab-separated log output. The parser automatically extracts Recipient, Sender, IPs, Times, Subjects, and Detection reasons.
+                </div>
+
+                <!-- Textarea for bulk paste -->
+                <div class="relative flex-1 flex flex-col">
+                    <textarea 
+                        id="rawInput" 
+                        class="w-full flex-1 bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs mono-font text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none placeholder:text-slate-600"
+                        placeholder="Paste tabular rows directly from Sentinel here (e.g., Recipient | SenderAddress | SenderIP | TimeReceived | SubjectLine | QuarantineReason | DetectionTechnology)..."
+                        oninput="parseLogs()"></textarea>
+                </div>
+
+                <!-- Customization Options -->
+                <div class="mt-4 pt-3 border-t border-slate-800 grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Reputation</label>
+                        <input type="text" id="defaultReputation" value="Domain is Safe | IP is Safe" oninput="parseLogs()" 
+                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Observation</label>
+                        <input type="text" id="defaultObservation" value="" placeholder="e.g. Malicious attachment" oninput="parseLogs()" 
+                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button onclick="parseLogs()" class="mt-4 w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium rounded-xl text-xs transition shadow-lg shadow-blue-600/20 flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-bolt"></i>
+                    <span>Parse & Transform Logs</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Right Panel: Formatted Output -->
+        <section class="lg:col-span-7 flex flex-col space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col h-[calc(100vh-10rem)] min-h-[500px]">
+                
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-file-lines text-emerald-400"></i>
+                        <h2 class="font-semibold text-sm text-slate-200">Formatted Output</h2>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span id="outputCountBadge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">0 blocks</span>
+                        <button onclick="copyAllOutput()" class="px-3 py-1 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center space-x-1.5 shadow-sm">
+                            <i class="fa-regular fa-copy"></i>
+                            <span>Copy All</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Output Container -->
+                <div id="outputContainer" class="flex-1 mt-3 overflow-y-auto bg-slate-950/80 border border-slate-800 rounded-xl p-4 mono-font text-xs text-slate-300 space-y-6 select-all">
+                    <div class="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 select-none">
+                        <i class="fa-solid fa-terminal text-3xl"></i>
+                        <p class="text-xs">Paste your logs on the left to instantly generate the formatted output blocks.</p>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 border border-slate-700 text-slate-100 text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 z-50">
+        <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+        <span id="toastMessage">Copied to clipboard successfully!</span>
+    </div>
+
+    <script>
+        // Sample data mimicking Sentinel copy-paste or KQL grid rows
+        const sampleLogs = `Recipient\tSenderAddress\tSenderIP\tTimeReceived [UTC]\tSubjectLine\tQuarantineReason\tDetectionTechnology
+nick.argol@stellarlife.com\tmaxdividends@substack.com\t69.72.32.112\t10/22/2026, 11:57:42.000...\tPersonalized Portfolio Review + Ideas\tOther / Verify in Quarantine\t
+dawn.wynn@stellarlife.com\tteams-meeting@smritycomputer.com\t54.240.27.194\t10/22/2026, 11:43:53.000...\tConference\tHigh confidence phish\t{"Phish":["Fingerprint matching"],"Spam":["Fingerprint matching"]}
+john@stellarlife.com\tinfo@e.wealthenhancement.com\t13.111.56.99\t10/22/2026, 11:38:05.000...\tScammers Are Getting Smarter. Are You Ready?\tOther / Verify in Quarantine\t
+john@stellarlife.com\tjohn@stellarlife.com\t104.223.84.140\t10/22/2026, 10:33:32.000...\tVoicemail message received — Stellar national - 22 October 2026-03:31 PM\tHigh confidence phish\t{"Phish":["URL detonation"],"Spoof intra-org"}`;
+
+        function loadSampleData() {
+            document.getElementById('rawInput').value = sampleLogs;
+            parseLogs();
+        }
+
+        function clearAll() {
+            document.getElementById('rawInput').value = '';
+            parseLogs();
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMessage').textContent = message;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 2500);
+        }
+
+        // Clean detection technologies JSON or raw string
+        function formatDetectionTech(rawTech) {
+            if (!rawTech || rawTech.trim() === '') return '';
+            try {
+                // If it's valid JSON like {"Phish":["Fingerprint matching"]}
+                const parsed = JSON.parse(rawTech.trim());
+                let parts = [];
+                for (let key in parsed) {
+                    if (Array.isArray(parsed[key])) {
+                        parts.push(`${key}: ${parsed[key].join(', ')}`);
+                    } else {
+                        parts.push(`${key}: ${parsed[key]}`);
+                    }
+                }
+                return parts.join(' | ');
+            } catch (e) {
+                // Return cleaned string if not JSON
+                return rawTech.replace(/[{}"\[\]]/g, '').trim();
+            }
+        }
+
+        // Parse raw text input (supports TSV, CSV, or multi-line logs)
+        function parseLogs() {
+            const input = document.getElementById('rawInput').value.trim();
+            const outputContainer = document.getElementById('outputContainer');
+            const rowCountBadge = document.getElementById('rowCountBadge');
+            const outputCountBadge = document.getElementById('outputCountBadge');
+            
+            const defRep = document.getElementById('defaultReputation').value;
+            const defObs = document.getElementById('defaultObservation').value;
+
+            if (!input) {
+                outputContainer.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 select-none">
+                        <i class="fa-solid fa-terminal text-3xl"></i>
+                        <p class="text-xs">Paste your logs on the left to instantly generate the formatted output blocks.</p>
+                    </div>`;
+                rowCountBadge.textContent = '0 entries';
+                outputCountBadge.textContent = '0 blocks';
+                return;
+            }
+
+            const lines = input.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            
+            // Check if first line is a header
+            let startIndex = 0;
+            const firstLineLower = lines[0].toLowerCase();
+            if (firstLineLower.includes('recipient') && (firstLineLower.includes('sender') || firstLineLower.includes('subject'))) {
+                startIndex = 1;
+            }
+
+            let entries = [];
+
+            for (let i = startIndex; i < lines.length; i++) {
+                const line = lines[i];
+                // Split by tab (standard for Sentinel grid copy-paste) or multiple spaces if tab isn't present
+                let cols = line.split('\t');
+                if (cols.length < 3) {
+                    // Fallback to regex split or multi-space splitting if tab delimiter wasn't used
+                    cols = line.split(/\s{2,}/);
+                }
+
+                // If we couldn't split nicely, create a fallback entry using the whole line
+                if (cols.length >= 6) {
+                    entries.push({
+                        recipient: cols[0] || 'N/A',
+                        sender: cols[1] || 'N/A',
+                        senderIp: cols[2] || 'N/A',
+                        timeReceived: cols[3] || 'N/A',
+                        subject: cols[4] || 'N/A',
+                        quarantineReason: cols[5] || 'N/A',
+                        detection: formatDetectionTech(cols[6] || '')
+                    });
+                } else if (cols.length >= 4) {
+                    entries.push({
+                        recipient: cols[0] || 'N/A',
+                        sender: cols[1] || 'N/A',
+                        senderIp: cols[2] || 'N/A',
+                        timeReceived: cols[3] || 'N/A',
+                        subject: cols[4] || 'N/A',
+                        quarantineReason: cols[5] || 'Other / Verify in Quarantine',
+                        detection: formatDetectionTech(cols[6] || '')
+                    });
+                } else {
+                    // Fallback generic parsing if columns are irregular
+                    entries.push({
+                        recipient: 'Parsed Line ' + (i + 1),
+                        sender: 'N/A',
+                        senderIp: 'N/A',
+                        timeReceived: 'N/A',
+                        subject: line,
+                        quarantineReason: 'Verify in Quarantine',
+                        detection: ''
+                    });
+                }
+            }
+
+            rowCountBadge.textContent = `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`;
+            outputCountBadge.textContent = `${entries.length} ${entries.length === 1 ? 'block' : 'blocks'}`;
+
+            if (entries.length === 0) {
+                outputContainer.innerHTML = `<div class="text-slate-500 text-center py-8">No valid log rows detected. Check input format.</div>`;
+                return;
+            }
+
+            let htmlContent = '';
+            let rawPlainText = '';
+
+            entries.forEach((item, index) => {
+                const emailNum = index + 1;
+                const blockText = 
+`Email ${emailNum}
+Recipient Address: ${item.recipient}
+Sender Address: ${item.sender}
+Time Received: ${item.timeReceived}
+Sender IP: ${item.senderIp}
+Subject Line: ${item.subject}
+Quarantine Reason: ${item.quarantineReason}
+Detection technologies: ${item.detection}
+Reputation: ${defRep}
+Observation: ${defObs}`;
+
+                rawPlainText += blockText + '\n\n';
+
+                htmlContent += `
+                    <div class="relative group bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-1.5 hover:border-slate-700 transition">
+                        <div class="flex items-center justify-between pb-1 border-b border-slate-800/80 mb-2">
+                            <span class="text-blue-400 font-bold text-xs">Email ${emailNum}</span>
+                            <button onclick="copySingleBlock(this)" data-text="${encodeURIComponent(blockText)}" class="opacity-80 group-hover:opacity-100 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] transition flex items-center space-x-1">
+                                <i class="fa-regular fa-copy"></i>
+                                <span>Copy Block</span>
+                            </button>
+                        </div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Recipient Address:</span> ${escapeHtml(item.recipient)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Sender Address:</span> ${escapeHtml(item.sender)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Time Received:</span> ${escapeHtml(item.timeReceived)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Sender IP:</span> ${escapeHtml(item.senderIp)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Subject Line:</span> ${escapeHtml(item.subject)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Quarantine Reason:</span> ${escapeHtml(item.quarantineReason)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Detection technologies:</span> ${escapeHtml(item.detection)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Reputation:</span> ${escapeHtml(defRep)}</div>
+                        <div class="text-slate-300"><span class="text-slate-500 font-semibold">Observation:</span> ${escapeHtml(defObs)}</div>
+                    </div>
+                `;
+            });
+
+            outputContainer.innerHTML = htmlContent;
+            window.lastGeneratedText = rawPlainText.trim();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function copySingleBlock(btn) {
+            const text = decodeURIComponent(btn.getAttribute('data-text'));
+            copyTextToClipboard(text, 'Email block copied to clipboard!');
+        }
+
+        function copyAllOutput() {
+            if (!window.lastGeneratedText) {
+                showToast('No output to copy!');
+                return;
+            }
+            copyTextToClipboard(window.lastGeneratedText, 'All formatted email blocks copied!');
+        }
+
+        function copyTextToClipboard(text, successMessage) {
+            // Fallback for iFrame or restricted clipboard permissions
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";  // Avoid scrolling to bottom
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast(successMessage);
+                } else {
+                    showToast('Failed to copy');
+                }
+            } catch (err) {
+                showToast('Error copying to clipboard');
+                console.error('Fallback: Oops, unable to copy', err);
+            }
+
+            document.body.removeChild(textArea);
+        }
+
+        // Initial parse on load
+        window.onload = function() {
+            loadSampleData();
+        }
+    </script>
+</body>
+</html>
